@@ -80,6 +80,41 @@ impl Frame {
     }
 }
 
+/// Sample N evenly-spaced points along a circle centred at (cx, cy).
+pub fn sample_circle(cx: f64, cy: f64, r: f64, color: Rgb, density: f64, out: &mut Frame) {
+    if r < 0.5 { return; }
+    let n = (2.0 * std::f64::consts::PI * r / density).ceil() as usize;
+    let n = n.max(8);
+    for i in 0..n {
+        let a = i as f64 / n as f64 * crate::motion::TAU;
+        out.push(cx + a.cos() * r, cy + a.sin() * r, color);
+    }
+}
+
+/// Sample points along a line from (x0, y0) to (x1, y1).
+pub fn sample_line(x0: f64, y0: f64, x1: f64, y1: f64, color: Rgb, density: f64, out: &mut Frame) {
+    let dx = x1 - x0;
+    let dy = y1 - y0;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 0.5 { return; }
+    let n = (len / density).ceil() as usize;
+    let n = n.max(2);
+    for i in 0..=n {
+        let t = i as f64 / n as f64;
+        out.push(x0 + dx * t, y0 + dy * t, color);
+    }
+}
+
+/// Sample a closed polygon by sampling each edge.
+pub fn sample_polygon(pts: &[(f64, f64)], color: Rgb, density: f64, out: &mut Frame) {
+    if pts.len() < 2 { return; }
+    for i in 0..pts.len() {
+        let (x0, y0) = pts[i];
+        let (x1, y1) = pts[(i + 1) % pts.len()];
+        sample_line(x0, y0, x1, y1, color, density, out);
+    }
+}
+
 pub fn render(m: Mandala, p: &Params, t: f64, c: &Common, out: &mut Frame) {
     match m {
         Mandala::Sacred     => sacred::render(p, t, c, out),
@@ -103,5 +138,23 @@ mod tests {
         let mut m = Mandala::Sacred;
         for _ in 0..Mandala::ALL.len() { m = m.next(); }
         assert_eq!(m, Mandala::Sacred);
+    }
+    #[test]
+    fn sample_circle_pushes_points() {
+        let mut f = Frame::default();
+        sample_circle(0.0, 0.0, 10.0, (255, 0, 0), 1.0, &mut f);
+        assert!(f.points.len() >= 8);
+        for p in &f.points {
+            let r = (p.x * p.x + p.y * p.y).sqrt();
+            assert!((r - 10.0).abs() < 0.001);
+        }
+    }
+    #[test]
+    fn sample_line_pushes_points() {
+        let mut f = Frame::default();
+        sample_line(0.0, 0.0, 10.0, 0.0, (0,0,0), 1.0, &mut f);
+        assert!(f.points.len() >= 2);
+        assert!(f.points.first().unwrap().x < 0.01);
+        assert!((f.points.last().unwrap().x - 10.0).abs() < 0.01);
     }
 }
