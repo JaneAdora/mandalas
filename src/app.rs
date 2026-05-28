@@ -1,6 +1,6 @@
 //! AppState: which mandala is active, slider focus, params per mandala, common, pause state.
 
-use crate::controls::{schema, snap, Common, Params, COMMON_SLIDERS};
+use crate::controls::{schema, snap, Common, Params, Slider, COMMON_SLIDERS};
 use crate::render::Mandala;
 use std::collections::HashMap;
 use std::time::Instant;
@@ -100,6 +100,31 @@ impl AppState {
                     "stroke"      => self.common.stroke      = snap(&s, self.common.stroke + delta),
                     _ => {}
                 }
+            }
+        }
+    }
+
+    /// The (slider, current value) pair the user is currently focused on.
+    pub fn focused_slider(&self) -> (Slider, f64) {
+        match self.group {
+            SliderGroup::Mandala => {
+                let s = schema(self.active);
+                let sl = s[self.focus];
+                let v = self.current_params().get(self.focus);
+                (sl, v)
+            }
+            SliderGroup::Common => {
+                let sl = COMMON_SLIDERS[self.focus];
+                let v = match sl.key {
+                    "speed"       => self.common.speed,
+                    "pulse_depth" => self.common.pulse_depth,
+                    "pulse_rate"  => self.common.pulse_rate,
+                    "hue_drift"   => self.common.hue_drift,
+                    "hue"         => self.common.hue,
+                    "stroke"      => self.common.stroke,
+                    _ => 0.0,
+                };
+                (sl, v)
             }
         }
     }

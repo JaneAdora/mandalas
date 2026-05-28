@@ -14,6 +14,16 @@ pub struct Slider {
     pub unit: &'static str,
 }
 
+impl Slider {
+    pub fn format_value(&self, v: f64) -> String {
+        if v.fract().abs() < 1e-9 {
+            format!("{}{}", v as i64, self.unit)
+        } else {
+            format!("{:.2}{}", v, self.unit)
+        }
+    }
+}
+
 /// Per-mandala parameter values.
 #[derive(Debug, Clone)]
 pub struct Params {

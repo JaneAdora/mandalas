@@ -22,10 +22,6 @@ fn bar(v: f64, lo: f64, hi: f64) -> String {
     s
 }
 
-fn format_value(v: f64, unit: &str) -> String {
-    if v.fract().abs() < 1e-9 { format!("{}{}", v as i64, unit) }
-    else { format!("{:.2}{}", v, unit) }
-}
 
 pub fn render(f: &mut TuiFrame, area: Rect, state: &AppState) {
     let mut lines: Vec<Line> = Vec::new();
@@ -81,12 +77,17 @@ fn slider_line(s: &Slider, v: f64, focused: bool) -> Line<'static> {
     } else {
         Style::default().fg(rgb(TEXT))
     };
-    Line::from(vec![
+    let line = Line::from(vec![
         Span::raw(marker.to_string()),
         Span::styled(s.label.to_string(), label_style),
         Span::raw("  "),
         Span::styled(bar(v, s.min, s.max), Style::default().fg(rgb(MAGENTA))),
         Span::raw("  "),
-        Span::styled(format_value(v, s.unit), Style::default().fg(rgb(DIM))),
-    ])
+        Span::styled(s.format_value(v), Style::default().fg(rgb(DIM))),
+    ]);
+    if focused {
+        line.style(Style::default().bg(Color::Rgb(0x2a, 0x1a, 0x35)))
+    } else {
+        line
+    }
 }
