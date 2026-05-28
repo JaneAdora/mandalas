@@ -82,8 +82,9 @@ fn preset_line(state: &AppState, focused: bool) -> Line<'static> {
     } else {
         Style::default().fg(rgb(TEXT))
     };
-    let bar_str = bar(state.preset_slot as f64, 0.0, 9.0);
-    let status = state.preset_status_label(state.preset_slot);
+    let slot = state.current_preset_slot();
+    let bar_str = bar(slot as f64, 0.0, 9.0);
+    let status = state.preset_status_label(slot);
     let line = Line::from(vec![
         Span::raw(marker.to_string()),
         Span::styled("Preset".to_string(), label_style),

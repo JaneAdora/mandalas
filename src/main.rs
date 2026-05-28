@@ -61,29 +61,23 @@ fn run_loop(term: &mut Terminal<CrosstermBackend<Stdout>>, state: &mut AppState)
                     KeyCode::Char('R') => state.randomize_active(),
                     KeyCode::Char('?') => state.toggle_help(),
                     KeyCode::Char('0') => {
-                        state.preset_slot = 0;
                         state.apply_preset_slot(0);
                     }
                     KeyCode::Char(c) if c.is_ascii_digit() => {
                         let slot = c.to_digit(10).unwrap() as u8;
-                        state.preset_slot = slot;
                         state.apply_preset_slot(slot);
                     }
                     KeyCode::Char('s') => {
-                        let target_slot = if state.preset_slot > 0 && !state.presets.contains_key(&state.preset_slot) {
-                            // user landed on an empty slot and wants to save there
-                            state.preset_slot
-                        } else if state.preset_slot > 0 {
-                            // user is on a saved slot — overwrite
-                            state.preset_slot
+                        let cur = state.current_preset_slot();
+                        let target_slot = if cur > 0 {
+                            cur
                         } else {
-                            // slot 0 (reset) — fall through to next empty
                             next_empty_slot(state).unwrap_or(1)
                         };
                         let preset = presets::Preset::from_state(state, format!("slot{target_slot}"));
-                        state.presets.insert(target_slot, preset.clone());
+                        state.presets.entry(state.active).or_default().insert(target_slot, preset);
                         let _ = presets::save(&state.presets);
-                        state.preset_slot = target_slot;
+                        state.set_current_preset_slot(target_slot);
                         state.show_toast(format!("saved to preset {target_slot}"));
                     }
                     _ => {}
@@ -95,5 +89,8 @@ fn run_loop(term: &mut Terminal<CrosstermBackend<Stdout>>, state: &mut AppState)
 }
 
 fn next_empty_slot(state: &AppState) -> Option<u8> {
-    (1u8..=9).find(|s| !state.presets.contains_key(s))
+    let mandala_presets = state.presets.get(&state.active);
+    (1u8..=9).find(|s| {
+        mandala_presets.map_or(true, |m| !m.contains_key(s))
+    })
 }

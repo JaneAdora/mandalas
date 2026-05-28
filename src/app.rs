@@ -14,14 +14,14 @@ pub struct AppState {
     pub common: Common,
     pub group: SliderGroup,
     pub focus: usize,
-    pub preset_slot: u8,
+    pub preset_slots: HashMap<crate::render::Mandala, u8>,
     pub paused: bool,
     pub sidebar_visible: bool,
     pub help_open: bool,
     pub start: Instant,
     pub anim_time: f64,
     pub last_tick: Instant,
-    pub presets: HashMap<u8, crate::presets::Preset>,
+    pub presets: HashMap<crate::render::Mandala, HashMap<u8, crate::presets::Preset>>,
     pub toast: Option<(String, Instant)>,
 }
 
@@ -37,7 +37,7 @@ impl AppState {
             common: Common::default(),
             group: SliderGroup::Mandala,
             focus: 0,
-            preset_slot: 0,
+            preset_slots: HashMap::new(),
             paused: false,
             sidebar_visible: true,
             help_open: false,
@@ -51,6 +51,19 @@ impl AppState {
 
     pub fn current_params(&self) -> &Params { &self.params[&self.active] }
     pub fn current_params_mut(&mut self) -> &mut Params { self.params.get_mut(&self.active).unwrap() }
+
+    pub fn current_preset_slot(&self) -> u8 {
+        self.preset_slots.get(&self.active).copied().unwrap_or(0)
+    }
+
+    pub fn set_current_preset_slot(&mut self, slot: u8) {
+        self.preset_slots.insert(self.active, slot);
+    }
+
+    /// Reference to the current mandala's preset map, if any.
+    pub fn current_mandala_presets(&self) -> Option<&HashMap<u8, crate::presets::Preset>> {
+        self.presets.get(&self.active)
+    }
 
     pub fn next_mandala(&mut self) { self.active = self.active.next(); self.focus = 0; self.group = SliderGroup::Mandala; }
     pub fn prev_mandala(&mut self) { self.active = self.active.prev(); self.focus = 0; self.group = SliderGroup::Mandala; }
@@ -94,10 +107,10 @@ impl AppState {
     pub fn adjust(&mut self, delta_steps: f64) {
         match self.group {
             SliderGroup::Preset => {
-                let new_raw = (self.preset_slot as i32) + (delta_steps as i32);
+                let cur = self.current_preset_slot();
+                let new_raw = (cur as i32) + (delta_steps as i32);
                 let new_slot = new_raw.clamp(0, 9) as u8;
-                if new_slot != self.preset_slot {
-                    self.preset_slot = new_slot;
+                if new_slot != cur {
                     self.apply_preset_slot(new_slot);
                 }
             }
@@ -126,12 +139,16 @@ impl AppState {
 
     /// Apply the chosen preset slot: 0 resets, 1-9 loads if saved, else no-op.
     pub fn apply_preset_slot(&mut self, slot: u8) {
+        self.set_current_preset_slot(slot);
         if slot == 0 {
             self.reset_to_defaults();
             self.show_toast("reset to defaults");
             return;
         }
-        if let Some(preset) = self.presets.get(&slot).cloned() {
+        let maybe_preset = self.presets.get(&self.active)
+            .and_then(|m| m.get(&slot))
+            .cloned();
+        if let Some(preset) = maybe_preset {
             preset.apply_to(self);
             self.normalize_focus();
             self.show_toast(format!("preset {slot} loaded"));
@@ -162,7 +179,7 @@ impl AppState {
     pub fn preset_status_label(&self, slot: u8) -> String {
         if slot == 0 {
             "RESET".to_string()
-        } else if self.presets.contains_key(&slot) {
+        } else if self.presets.get(&self.active).map_or(false, |m| m.contains_key(&slot)) {
             format!("★ slot {}", slot)
         } else {
             format!("[empty] slot {}", slot)
@@ -172,7 +189,7 @@ impl AppState {
     /// The (slider, current value) pair the user is currently focused on.
     pub fn focused_slider(&self) -> (Slider, f64) {
         match self.group {
-            SliderGroup::Preset => (PRESET_SLIDER, self.preset_slot as f64),
+            SliderGroup::Preset => (PRESET_SLIDER, self.current_preset_slot() as f64),
             SliderGroup::Mandala => {
                 let s = schema(self.active);
                 let sl = s[self.focus];
@@ -292,4 +309,33 @@ mod tests {
         s.apply_preset_slot(0);
         assert!((s.common.speed - Common::default().speed).abs() < 1e-9);
     }
+
+    #[test]
+    fn loading_preset_does_not_swap_active_mandala() {
+        let mut s = AppState::new();
+        s.active = Mandala::Sacred;
+        // Stash a preset under Sacred slot 1
+        let pre = crate::presets::Preset::from_state(&s, "test".into());
+        s.presets.entry(Mandala::Sacred).or_default().insert(1, pre);
+        // Now switch to Lotus
+        s.active = Mandala::Lotus;
+        // Loading slot 1 on Lotus should be a no-op (empty), NOT swap to Sacred
+        s.apply_preset_slot(1);
+        assert_eq!(s.active, Mandala::Lotus);
+    }
+
+    #[test]
+    fn preset_slot_is_remembered_per_mandala() {
+        let mut s = AppState::new();
+        s.active = Mandala::Sacred;
+        s.set_current_preset_slot(3);
+        s.active = Mandala::Lotus;
+        s.set_current_preset_slot(5);
+        // Going back to Sacred should restore slot 3
+        s.active = Mandala::Sacred;
+        assert_eq!(s.current_preset_slot(), 3);
+        s.active = Mandala::Lotus;
+        assert_eq!(s.current_preset_slot(), 5);
+    }
 }
+

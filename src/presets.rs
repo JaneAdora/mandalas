@@ -37,10 +37,10 @@ impl Preset {
         }
     }
 
+    /// Apply this preset to state. Does NOT switch the active mandala
+    /// (per-style presets stay on the user's current mandala). Only sets
+    /// per-mandala params + Common motion.
     pub fn apply_to(self, state: &mut AppState) {
-        if let Some(m) = Mandala::from_slug(&self.mandala) {
-            state.active = m;
-        }
         let s = crate::controls::schema(state.active);
         if self.params.len() == s.len() {
             state.current_params_mut().values = self.params;
@@ -57,7 +57,14 @@ impl Preset {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct PresetFile { presets: HashMap<u8, Preset> }
+struct PresetFile {
+    presets: HashMap<String, HashMap<u8, Preset>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct OldPresetFile {
+    presets: HashMap<u8, Preset>,
+}
 
 fn presets_path() -> PathBuf {
     dirs::config_dir()
@@ -66,20 +73,43 @@ fn presets_path() -> PathBuf {
         .join("presets.toml")
 }
 
-pub fn load() -> Result<HashMap<u8, Preset>> {
+pub fn load() -> Result<HashMap<Mandala, HashMap<u8, Preset>>> {
     let path = presets_path();
     if !path.exists() { return Ok(HashMap::new()); }
     let raw = std::fs::read_to_string(&path)?;
-    let file: PresetFile = toml::from_str(&raw)?;
-    Ok(file.presets)
+
+    // Try new (nested) format first
+    if let Ok(file) = toml::from_str::<PresetFile>(&raw) {
+        let mut out: HashMap<Mandala, HashMap<u8, Preset>> = HashMap::new();
+        for (slug, slots) in file.presets {
+            if let Some(m) = Mandala::from_slug(&slug) {
+                out.insert(m, slots);
+            }
+        }
+        return Ok(out);
+    }
+
+    // Fall back to old flat format and migrate by grouping on preset.mandala
+    let old: OldPresetFile = toml::from_str(&raw)?;
+    let mut out: HashMap<Mandala, HashMap<u8, Preset>> = HashMap::new();
+    for (slot, preset) in old.presets {
+        if let Some(m) = Mandala::from_slug(&preset.mandala) {
+            out.entry(m).or_default().insert(slot, preset);
+        }
+    }
+    Ok(out)
 }
 
-pub fn save(presets: &HashMap<u8, Preset>) -> Result<()> {
+pub fn save(presets: &HashMap<Mandala, HashMap<u8, Preset>>) -> Result<()> {
     let path = presets_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let file = PresetFile { presets: presets.clone() };
+    let mut by_slug: HashMap<String, HashMap<u8, Preset>> = HashMap::new();
+    for (m, slots) in presets {
+        by_slug.insert(m.slug().to_string(), slots.clone());
+    }
+    let file = PresetFile { presets: by_slug };
     let s = toml::to_string_pretty(&file)?;
     std::fs::write(&path, s)?;
     Ok(())
@@ -88,13 +118,17 @@ pub fn save(presets: &HashMap<u8, Preset>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::Mandala;
+
     #[test]
-    fn preset_roundtrips_in_memory() {
+    fn preset_does_not_change_active_mandala() {
+        // After per-style refactor: loading a preset should NOT swap the
+        // active mandala (presets are scoped to whatever mandala you're on).
         let mut state = AppState::new();
-        let original_active = state.active;
+        state.active = Mandala::Lotus;
         let pre = Preset::from_state(&state, "test".into());
-        state.active = state.active.next();
+        state.active = Mandala::Sacred;
         pre.apply_to(&mut state);
-        assert_eq!(state.active, original_active);
+        assert_eq!(state.active, Mandala::Sacred, "active should not change");
     }
 }
