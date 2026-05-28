@@ -9,7 +9,7 @@ date: 2026-05-28
 
 A standalone Rust/ratatui TUI app that renders animated mandalas in the terminal, purely for visual joy. Six mandala styles with per-style parameters and global motion controls. The user picks a style with `Tab`, watches it breathe, optionally tweaks parameters in a sidebar.
 
-The seventh sibling of the dashboard-widget suite alongside `wt`, `recall`, `roam`, `glance`, `atlas`, `cal`.
+Part of the dashboard widget suite alongside the other public siblings (`wt`, `roam`, `atlas`).
 
 ## Aesthetic Direction
 

@@ -1,6 +1,6 @@
 # mandalas
 
-Animated mandalas in your terminal, purely for visual joy. Sibling of `wt` / `recall` / `roam` / `glance` / `atlas` / `cal`.
+Animated mandalas in your terminal, purely for visual joy. Sibling of the dashboard widget suite (public so far: `wt` / `roam` / `atlas`).
 
 Six mandala styles — Sacred Geometry, Lotus, Spirograph, Star Lattice, Flower of Life, Interlace — each with bespoke animation behaviour (echo trails, blooming petals, ripple waves, counter-rotation). Per-mandala parameters + global motion controls (speed, pulse depth/rate, hue drift, manual hue, stroke). Pause, save presets, load by number.
 
