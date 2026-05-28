@@ -22,11 +22,16 @@ pub fn render(f: &mut TuiFrame, area: Rect, state: &AppState) {
 
     // Line 2: " ▸ <focused slider label>: <value><unit>"
     let (sl, v) = state.focused_slider();
+    let value_text = if sl.key == "preset" {
+        state.preset_status_label(v as u8)
+    } else {
+        sl.format_value(v)
+    };
     let focus = Line::from(vec![
         Span::styled(" ▸ ", Style::default().fg(rgb(MAGENTA)).add_modifier(Modifier::BOLD)),
         Span::styled(sl.label.to_string(), Style::default().fg(rgb(MAGENTA)).add_modifier(Modifier::BOLD)),
         Span::styled(": ", Style::default().fg(rgb(DIM))),
-        Span::styled(sl.format_value(v), Style::default().fg(rgb(MAGENTA))),
+        Span::styled(value_text, Style::default().fg(rgb(MAGENTA))),
     ]);
 
     f.render_widget(

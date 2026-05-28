@@ -60,21 +60,31 @@ fn run_loop(term: &mut Terminal<CrosstermBackend<Stdout>>, state: &mut AppState)
                     KeyCode::Char('H') => state.toggle_sidebar(),
                     KeyCode::Char('R') => state.randomize_active(),
                     KeyCode::Char('?') => state.toggle_help(),
-                    KeyCode::Char(c) if c.is_ascii_digit() && c != '0' => {
+                    KeyCode::Char('0') => {
+                        state.preset_slot = 0;
+                        state.apply_preset_slot(0);
+                    }
+                    KeyCode::Char(c) if c.is_ascii_digit() => {
                         let slot = c.to_digit(10).unwrap() as u8;
-                        if let Some(preset) = state.presets.get(&slot).cloned() {
-                            preset.apply_to(state);
-                            state.show_toast(format!("preset {slot} loaded"));
-                        } else {
-                            state.show_toast(format!("preset {slot} empty"));
-                        }
+                        state.preset_slot = slot;
+                        state.apply_preset_slot(slot);
                     }
                     KeyCode::Char('s') => {
-                        let slot = next_empty_slot(state).unwrap_or(1);
-                        let preset = presets::Preset::from_state(state, format!("slot{slot}"));
-                        state.presets.insert(slot, preset.clone());
+                        let target_slot = if state.preset_slot > 0 && !state.presets.contains_key(&state.preset_slot) {
+                            // user landed on an empty slot and wants to save there
+                            state.preset_slot
+                        } else if state.preset_slot > 0 {
+                            // user is on a saved slot — overwrite
+                            state.preset_slot
+                        } else {
+                            // slot 0 (reset) — fall through to next empty
+                            next_empty_slot(state).unwrap_or(1)
+                        };
+                        let preset = presets::Preset::from_state(state, format!("slot{target_slot}"));
+                        state.presets.insert(target_slot, preset.clone());
                         let _ = presets::save(&state.presets);
-                        state.show_toast(format!("saved to preset {slot}"));
+                        state.preset_slot = target_slot;
+                        state.show_toast(format!("saved to preset {target_slot}"));
                     }
                     _ => {}
                 }

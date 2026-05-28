@@ -1,12 +1,12 @@
 //! AppState: which mandala is active, slider focus, params per mandala, common, pause state.
 
-use crate::controls::{schema, snap, Common, Params, Slider, COMMON_SLIDERS};
+use crate::controls::{schema, snap, Common, Params, Slider, COMMON_SLIDERS, PRESET_SLIDER};
 use crate::render::Mandala;
 use std::collections::HashMap;
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SliderGroup { Mandala, Common }
+pub enum SliderGroup { Preset, Mandala, Common }
 
 pub struct AppState {
     pub active: Mandala,
@@ -14,6 +14,7 @@ pub struct AppState {
     pub common: Common,
     pub group: SliderGroup,
     pub focus: usize,
+    pub preset_slot: u8,
     pub paused: bool,
     pub sidebar_visible: bool,
     pub help_open: bool,
@@ -36,6 +37,7 @@ impl AppState {
             common: Common::default(),
             group: SliderGroup::Mandala,
             focus: 0,
+            preset_slot: 0,
             paused: false,
             sidebar_visible: true,
             help_open: false,
@@ -57,35 +59,53 @@ impl AppState {
         let group_len = self.group_len();
         if self.focus + 1 < group_len {
             self.focus += 1;
-        } else if self.group == SliderGroup::Mandala {
-            self.group = SliderGroup::Common;
-            self.focus = 0;
+        } else {
+            match self.group {
+                SliderGroup::Preset  => { self.group = SliderGroup::Mandala; self.focus = 0; }
+                SliderGroup::Mandala => { self.group = SliderGroup::Common; self.focus = 0; }
+                SliderGroup::Common  => {}
+            }
         }
     }
 
     pub fn focus_up(&mut self) {
         if self.focus > 0 {
             self.focus -= 1;
-        } else if self.group == SliderGroup::Common {
-            self.group = SliderGroup::Mandala;
-            self.focus = schema(self.active).len().saturating_sub(1);
+        } else {
+            match self.group {
+                SliderGroup::Preset  => {}
+                SliderGroup::Mandala => { self.group = SliderGroup::Preset; self.focus = 0; }
+                SliderGroup::Common  => {
+                    self.group = SliderGroup::Mandala;
+                    self.focus = schema(self.active).len().saturating_sub(1);
+                }
+            }
         }
     }
 
     fn group_len(&self) -> usize {
         match self.group {
+            SliderGroup::Preset  => 1,
             SliderGroup::Mandala => schema(self.active).len(),
-            SliderGroup::Common => COMMON_SLIDERS.len(),
+            SliderGroup::Common  => COMMON_SLIDERS.len(),
         }
     }
 
     pub fn adjust(&mut self, delta_steps: f64) {
         match self.group {
+            SliderGroup::Preset => {
+                let new_raw = (self.preset_slot as i32) + (delta_steps as i32);
+                let new_slot = new_raw.clamp(0, 9) as u8;
+                if new_slot != self.preset_slot {
+                    self.preset_slot = new_slot;
+                    self.apply_preset_slot(new_slot);
+                }
+            }
             SliderGroup::Mandala => {
-                let focus = self.focus;
-                let s = schema(self.active)[focus];
-                let cur = self.current_params().get(focus);
+                let s = schema(self.active)[self.focus];
+                let cur = self.current_params().get(self.focus);
                 let new = snap(&s, cur + delta_steps * s.step);
+                let focus = self.focus;
                 self.current_params_mut().set(focus, new);
             }
             SliderGroup::Common => {
@@ -104,9 +124,55 @@ impl AppState {
         }
     }
 
+    /// Apply the chosen preset slot: 0 resets, 1-9 loads if saved, else no-op.
+    pub fn apply_preset_slot(&mut self, slot: u8) {
+        if slot == 0 {
+            self.reset_to_defaults();
+            self.show_toast("reset to defaults");
+            return;
+        }
+        if let Some(preset) = self.presets.get(&slot).cloned() {
+            preset.apply_to(self);
+            self.normalize_focus();
+            self.show_toast(format!("preset {slot} loaded"));
+        } else {
+            self.show_toast(format!("preset {slot} empty"));
+        }
+    }
+
+    /// Reset all per-mandala params to schema defaults and Common to Common::default().
+    /// Active mandala is preserved.
+    pub fn reset_to_defaults(&mut self) {
+        for m in Mandala::ALL {
+            self.params.insert(*m, Params::defaults(schema(*m)));
+        }
+        self.common = Common::default();
+    }
+
+    /// Clamp focus to within the current group_len after any operation that
+    /// could leave it out of bounds (e.g., loading a preset whose mandala has
+    /// fewer sliders than the current focus).
+    pub fn normalize_focus(&mut self) {
+        let len = self.group_len();
+        if len == 0 { return; }
+        if self.focus >= len { self.focus = len - 1; }
+    }
+
+    /// Human-readable status for a preset slot, used in the sidebar/header.
+    pub fn preset_status_label(&self, slot: u8) -> String {
+        if slot == 0 {
+            "RESET".to_string()
+        } else if self.presets.contains_key(&slot) {
+            format!("★ slot {}", slot)
+        } else {
+            format!("[empty] slot {}", slot)
+        }
+    }
+
     /// The (slider, current value) pair the user is currently focused on.
     pub fn focused_slider(&self) -> (Slider, f64) {
         match self.group {
+            SliderGroup::Preset => (PRESET_SLIDER, self.preset_slot as f64),
             SliderGroup::Mandala => {
                 let s = schema(self.active);
                 let sl = s[self.focus];
@@ -196,5 +262,34 @@ mod tests {
         s.adjust(1.0);
         let after = s.current_params().get(0);
         assert!((after - before).abs() > 1e-9 || (before == schema(s.active)[0].max));
+    }
+
+    #[test]
+    fn focus_walk_starts_at_preset() {
+        let mut s = AppState::new();
+        // Default focus starts at Mandala (group = Mandala, focus = 0).
+        // focus_up should land on Preset.
+        s.focus_up();
+        assert_eq!(s.group, SliderGroup::Preset);
+        assert_eq!(s.focus, 0);
+    }
+
+    #[test]
+    fn reset_to_defaults_restores_common() {
+        let mut s = AppState::new();
+        s.common.speed = 2.5;
+        s.common.hue = 180.0;
+        s.reset_to_defaults();
+        let def = Common::default();
+        assert!((s.common.speed - def.speed).abs() < 1e-9);
+        assert!((s.common.hue - def.hue).abs() < 1e-9);
+    }
+
+    #[test]
+    fn apply_preset_slot_zero_resets() {
+        let mut s = AppState::new();
+        s.common.speed = 2.5;
+        s.apply_preset_slot(0);
+        assert!((s.common.speed - Common::default().speed).abs() < 1e-9);
     }
 }

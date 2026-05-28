@@ -115,6 +115,17 @@ pub fn snap(s: &Slider, v: f64) -> f64 {
     (s.min + steps * s.step).clamp(s.min, s.max)
 }
 
+/// The virtual slider used by the Preset row in the sidebar.
+pub const PRESET_SLIDER: Slider = Slider {
+    key: "preset",
+    label: "Preset",
+    min: 0.0,
+    max: 9.0,
+    step: 1.0,
+    def: 0.0,
+    unit: "",
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;

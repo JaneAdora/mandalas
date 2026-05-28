@@ -26,6 +26,11 @@ fn bar(v: f64, lo: f64, hi: f64) -> String {
 pub fn render(f: &mut TuiFrame, area: Rect, state: &AppState) {
     let mut lines: Vec<Line> = Vec::new();
 
+    // Preset row at the top
+    let preset_focused = state.group == SliderGroup::Preset;
+    lines.push(preset_line(state, preset_focused));
+    lines.push(Line::from(""));
+
     // Per-mandala section
     let mandala_focused = state.group == SliderGroup::Mandala;
     lines.push(Line::from(Span::styled(
@@ -68,6 +73,30 @@ pub fn render(f: &mut TuiFrame, area: Rect, state: &AppState) {
             .style(Style::default().bg(rgb(BG)).fg(rgb(TEXT))),
         area,
     );
+}
+
+fn preset_line(state: &AppState, focused: bool) -> Line<'static> {
+    let marker = if focused { "▸ " } else { "  " };
+    let label_style = if focused {
+        Style::default().fg(rgb(MAGENTA)).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(rgb(TEXT))
+    };
+    let bar_str = bar(state.preset_slot as f64, 0.0, 9.0);
+    let status = state.preset_status_label(state.preset_slot);
+    let line = Line::from(vec![
+        Span::raw(marker.to_string()),
+        Span::styled("Preset".to_string(), label_style),
+        Span::raw("       "),
+        Span::styled(bar_str, Style::default().fg(rgb(MAGENTA))),
+        Span::raw("  "),
+        Span::styled(status, Style::default().fg(rgb(DIM))),
+    ]);
+    if focused {
+        line.style(Style::default().bg(Color::Rgb(0x2a, 0x1a, 0x35)))
+    } else {
+        line
+    }
 }
 
 fn slider_line(s: &Slider, v: f64, focused: bool) -> Line<'static> {
